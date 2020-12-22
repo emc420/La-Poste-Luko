@@ -1,5 +1,7 @@
-from flask import Blueprint
+from flask import Blueprint, request
 from flask_cors import CORS
+import requests
+from app import db
 
 from app.models.letter import Letter
 
@@ -18,3 +20,29 @@ def ep_setup_create_letter():
     letter = Letter()
     letter.add()
     return f"All done : letter object {letter.id} has been created", 200
+
+
+@v1.route('/getStatus/<track_id>', methods=['GET'])
+def get_status(track_id):
+    response = {}
+    status = None
+    resp = requests.get('https://api.laposte.fr/suivi/v2/idships/' + track_id,
+                        headers={'Content-Type': 'application/json',
+                                 'X-Okapi-Key': 'CPi92XSI3FB+FPPTjMMmJODI3/uM0fRlXQMEcgpZFfavvDOh1eSCvjgX5LyMCzzE'})
+    if resp.status_code != 200:
+        raise ValueError('GET /getStatus/ {}'.format(resp.status_code))
+    data = resp.json()
+    timeline = data['shipment']['timeline']
+    for stat in timeline:
+        if not stat['status']:
+            break
+        status = str(stat['id'])+' '+stat['shortLabel']
+    if status is not None:
+        response['status'] = status
+    else:
+        response['status'] = 'Not yet processed'
+    response['tracking_number'] = track_id
+    new_db_entry = Letter(tracking_number=response['tracking_number'], status=response['status'])
+    db.session.add(new_db_entry)
+    db.session.commit()
+    return response
