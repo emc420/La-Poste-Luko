@@ -1,4 +1,4 @@
-from flask import Blueprint, request
+from flask import Blueprint, Response
 from flask_cors import CORS
 import requests
 from app import db
@@ -30,7 +30,8 @@ def get_status(track_id):
                         headers={'Content-Type': 'application/json',
                                  'X-Okapi-Key': 'CPi92XSI3FB+FPPTjMMmJODI3/uM0fRlXQMEcgpZFfavvDOh1eSCvjgX5LyMCzzE'})
     if resp.status_code != 200:
-        raise ValueError('GET /getStatus/ {}'.format(resp.status_code))
+        status_code = Response(status=resp.status_code)
+        return status_code
     data = resp.json()
     timeline = data['shipment']['timeline']
     for stat in timeline:
