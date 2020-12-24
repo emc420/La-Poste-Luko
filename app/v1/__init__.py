@@ -33,9 +33,7 @@ def ep_setup_create_letter():
 def get_status(track_id):
     response = {}
     status = None
-    resp = requests.get('https://api.laposte.fr/suivi/v2/idships/' + track_id,
-                        headers={'Content-Type': 'application/json',
-                                 'X-Okapi-Key': api_key})
+    resp = fetch_letter_status_la_poste(track_id)
     if resp.status_code != 200:
         status_code = Response(status=resp.status_code)
         return status_code
@@ -50,18 +48,13 @@ def get_status(track_id):
     else:
         response['status'] = 'Not yet processed'
     response['tracking_number'] = track_id
-    row = Letter.query.filter_by(tracking_number=response['tracking_number']).first()
-    if row is None:
-        new_db_entry = Letter(tracking_number=response['tracking_number'], status=response['status'])
-        db.session.add(new_db_entry)
-        db.session.commit()
-    elif row.status == response['status']:
-        response['status'] = "Nothing to update"
-    else:
-        update_history(track_id, row.status)
-        row.status = response['status']
-        db.session.commit()
+    update_in_local_db(response)
     return response
+
+
+@v1.route('/getStatusAllLetters', methods=['GET'])
+def get_all_status():
+    return None
 
 
 def update_history(track_id, status):
@@ -72,3 +65,21 @@ def update_history(track_id, status):
     new_db_entry = obj(timestamp=datetime.now(), status=status)
     db.session.add(new_db_entry)
     db.session.commit()
+
+
+def fetch_letter_status_la_poste(track_id):
+    return requests.get('https://api.laposte.fr/suivi/v2/idships/' + track_id,
+                        headers={'Content-Type': 'application/json',
+                                 'X-Okapi-Key': api_key})
+
+
+def update_in_local_db(response):
+    row = Letter.query.filter_by(tracking_number=response['tracking_number']).first()
+    if row is None:
+        new_db_entry = Letter(tracking_number=response['tracking_number'], status=response['status'])
+        db.session.add(new_db_entry)
+        db.session.commit()
+    elif row.status != response['status']:
+        update_history(response['tracking_number'], row.status)
+        row.status = response['status']
+        db.session.commit()

@@ -1,6 +1,3 @@
-from sqlalchemy import MetaData
-from sqlalchemy.ext.declarative import declarative_base
-
 from app import db
 
 engine = db.get_engine()
