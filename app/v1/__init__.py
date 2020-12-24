@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from flask import Blueprint, Response
 from flask_cors import CORS
@@ -7,11 +8,13 @@ from app import db
 import app.config
 
 from app.models.letter import Letter
+from app.models.letter_history import is_table_present, create_table, get_table
 
 v1 = Blueprint("v1", __name__)
 CORS(v1)
 
 api_key = app.config[os.getenv("FLASK_CONFIG")].API_KEY
+
 
 @v1.route('/ping', methods=['GET'])
 def ep_ping():
@@ -41,18 +44,31 @@ def get_status(track_id):
     for stat in timeline:
         if not stat['status']:
             break
-        status = str(stat['id'])+' '+stat['shortLabel']
+        status = str(stat['id']) + ' ' + stat['shortLabel']
     if status is not None:
         response['status'] = status
     else:
         response['status'] = 'Not yet processed'
     response['tracking_number'] = track_id
     row = Letter.query.filter_by(tracking_number=response['tracking_number']).first()
-    if row is not None and row.status == response['status']:
+    if row is None:
+        new_db_entry = Letter(tracking_number=response['tracking_number'], status=response['status'])
+        db.session.add(new_db_entry)
+        db.session.commit()
+    elif row.status == response['status']:
         response['status'] = "Nothing to update"
-        return response
-    new_db_entry = Letter(tracking_number=response['tracking_number'], status=response['status'])
+    else:
+        update_history(track_id, row.status)
+        row.status = response['status']
+        db.session.commit()
+    return response
+
+
+def update_history(track_id, status):
+    if is_table_present(track_id):
+        obj = get_table(track_id)
+    else:
+        obj = create_table(track_id)
+    new_db_entry = obj(timestamp=datetime.now(), status=status)
     db.session.add(new_db_entry)
     db.session.commit()
-
-    return response
