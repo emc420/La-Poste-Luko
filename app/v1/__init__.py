@@ -1,12 +1,17 @@
 import os
 from datetime import datetime
 import json
+import gevent.monkey
+
+gevent.monkey.patch_socket()
+
 from flask import Blueprint, Response
 from flask_cors import CORS
 import requests
+from gevent.pool import Pool
+
 from app import db
 import app.config
-
 from app.models.letter import Letter
 from app.models.letter_history import is_table_present, create_table, get_table
 
@@ -34,10 +39,10 @@ def get_status(track_id):
     response = {}
     status = None
     resp = fetch_letter_status_la_poste(track_id)
-    if resp.status_code != 200:
-        status_code = Response(status=resp.status_code)
+    if resp['returnCode'] != 200:
+        status_code = Response(status=resp['returnCode'])
         return status_code
-    data = resp.json()
+    data = resp
     timeline = data['shipment']['timeline']
     for stat in timeline:
         if not stat['status']:
@@ -58,8 +63,8 @@ def get_all_status():
     response = []
     for letter in letters:
         resp = get_status(letter.tracking_number)
-        if isinstance(resp, Response) and resp.status_code == 404:
-            temp = {'status': '404 not found', 'tracking_number': letter.tracking_number}
+        if isinstance(resp, Response) and resp.status_code != 200:
+            temp = {'status': resp.status_code, 'tracking_number': letter.tracking_number}
             response.append(temp)
         else:
             response.append(resp)
@@ -68,7 +73,11 @@ def get_all_status():
 
 @v1.route('/getStatusAsync', methods=['GET'])
 def get_all_status_async():
-    return None
+    letters = get_all_letters()
+    response = get_status_async(letters)
+
+    # update_in_local_db_async(response)
+    return json.dumps(response)
 
 
 def get_all_letters():
@@ -87,9 +96,13 @@ def update_history(track_id, status):
 
 
 def fetch_letter_status_la_poste(track_id):
-    return requests.get('https://api.laposte.fr/suivi/v2/idships/' + track_id,
+    session = requests.Session()
+    resp = session.get('https://api.laposte.fr/suivi/v2/idships/' + track_id,
                         headers={'Content-Type': 'application/json',
                                  'X-Okapi-Key': api_key})
+    if resp.status_code != 200:
+        return {'returnCode': resp.status_code, 'tracking_number': track_id}
+    return resp.json()
 
 
 def update_in_local_db(response):
@@ -102,3 +115,29 @@ def update_in_local_db(response):
         update_history(response['tracking_number'], row.status)
         row.status = response['status']
         db.session.commit()
+
+
+def get_status_async(letters):
+    response = []
+    status = None
+    pool = Pool(30)
+    threads = [pool.spawn(fetch_letter_status_la_poste, letter.tracking_number) for letter in letters]
+    pool.join()
+    for thread in threads:
+        resp = {}
+        if thread.value['returnCode'] == 200:
+            data = thread.value
+            timeline = data['shipment']['timeline']
+            for stat in timeline:
+                if not stat['status']:
+                    break
+                status = str(stat['id']) + ' ' + stat['shortLabel']
+            if status is not None:
+                resp['status'] = status
+            else:
+                resp['status'] = 'Not yet processed'
+            resp['tracking_number'] = data['shipment']['idShip']
+            response.append(resp)
+        else:
+            response.append({'status': thread.value['returnCode'], 'tracking_number': thread.value['tracking_number']})
+    return response
