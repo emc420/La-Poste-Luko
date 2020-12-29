@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-
+import json
 from flask import Blueprint, Response
 from flask_cors import CORS
 import requests
@@ -54,7 +54,26 @@ def get_status(track_id):
 
 @v1.route('/getStatusAllLetters', methods=['GET'])
 def get_all_status():
+    letters = get_all_letters()
+    response = []
+    for letter in letters:
+        resp = get_status(letter.tracking_number)
+        if isinstance(resp, Response) and resp.status_code == 404:
+            temp = {'status': '404 not found', 'tracking_number': letter.tracking_number}
+            response.append(temp)
+        else:
+            response.append(resp)
+    return json.dumps(response)
+
+
+@v1.route('/getStatusAsync', methods=['GET'])
+def get_all_status_async():
     return None
+
+
+def get_all_letters():
+    query_entry = Letter.query.with_entities(Letter.tracking_number, Letter.status).all()
+    return query_entry
 
 
 def update_history(track_id, status):
