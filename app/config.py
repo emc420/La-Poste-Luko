@@ -11,7 +11,8 @@ class Config:
 class DevelopmentConfig(Config):
     ENV_TYPE = "development"
     API_KEY = 'CPi92XSI3FB+FPPTjMMmJODI3/uM0fRlXQMEcgpZFfavvDOh1eSCvjgX5LyMCzzE'
-    CELERY_BROKER_URL = 'redis://localhost:6379/0'
+    CELERY_BROKER_URL = 'redis://localhost:6379'
+    CELERY_RESULT_BACKEND = 'redis://localhost:6379'
 
 
 class ProductionConfig(Config):

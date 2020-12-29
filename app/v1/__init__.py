@@ -1,4 +1,5 @@
 import os
+import threading
 from datetime import datetime
 import json
 import gevent.monkey
@@ -39,7 +40,7 @@ def get_status(track_id):
     response = {}
     status = None
     resp = fetch_letter_status_la_poste(track_id)
-    if resp['returnCode'] != 200:
+    if resp['returnCode'] != 200 and resp['returnCode'] != 207:
         status_code = Response(status=resp['returnCode'])
         return status_code
     data = resp
@@ -75,8 +76,8 @@ def get_all_status():
 def get_all_status_async():
     letters = get_all_letters()
     response = get_status_async(letters)
-
-    # update_in_local_db_async(response)
+    download_thread = threading.Thread(target=update_in_local_db_async(response))
+    download_thread.start()
     return json.dumps(response)
 
 
@@ -98,9 +99,9 @@ def update_history(track_id, status):
 def fetch_letter_status_la_poste(track_id):
     session = requests.Session()
     resp = session.get('https://api.laposte.fr/suivi/v2/idships/' + track_id,
-                        headers={'Content-Type': 'application/json',
-                                 'X-Okapi-Key': api_key})
-    if resp.status_code != 200:
+                       headers={'Content-Type': 'application/json',
+                                'X-Okapi-Key': api_key})
+    if resp.status_code != 200 and resp.status_code != 207:
         return {'returnCode': resp.status_code, 'tracking_number': track_id}
     return resp.json()
 
@@ -119,13 +120,15 @@ def update_in_local_db(response):
 
 def get_status_async(letters):
     response = []
-    status = None
     pool = Pool(30)
     threads = [pool.spawn(fetch_letter_status_la_poste, letter.tracking_number) for letter in letters]
     pool.join()
     for thread in threads:
+        status = None
         resp = {}
-        if thread.value['returnCode'] == 200:
+        if thread.value is None:
+            continue
+        elif thread.value['returnCode'] == 200:
             data = thread.value
             timeline = data['shipment']['timeline']
             for stat in timeline:
@@ -141,3 +144,18 @@ def get_status_async(letters):
         else:
             response.append({'status': thread.value['returnCode'], 'tracking_number': thread.value['tracking_number']})
     return response
+
+
+def update_in_local_db_async(response):
+    for resp in response:
+        if resp['status'] != 400 and resp['status'] != 401 and resp['status'] != 404 and resp['status'] != 500 and resp[
+            'status'] != 504:
+            row = Letter.query.filter_by(tracking_number=resp['tracking_number']).first()
+            if row is None:
+                new_db_entry = Letter(tracking_number=resp['tracking_number'], status=resp['status'])
+                db.session.add(new_db_entry)
+                db.session.commit()
+            elif row.status != resp['status']:
+                update_history(resp['tracking_number'], row.status)
+                row.status = resp['status']
+                db.session.commit()
