@@ -2,15 +2,11 @@ import os
 import threading
 from datetime import datetime
 import json
-import gevent.monkey
-
-gevent.monkey.patch_socket()
 
 from flask import Blueprint, Response
 from flask_cors import CORS
 import requests
-from gevent.pool import Pool
-
+import multiprocessing
 from app import db
 import app.config
 from app.models.letter import Letter
@@ -75,8 +71,9 @@ def get_all_status():
 @v1.route('/getStatusAsync', methods=['GET'])
 def get_all_status_async():
     letters = get_all_letters()
-    response = get_status_async(letters)
+    response = get_status_async_pool(letters)
     download_thread = threading.Thread(target=update_in_local_db_async(response))
+    download_thread.daemon = True
     download_thread.start()
     return json.dumps(response)
 
@@ -118,34 +115,6 @@ def update_in_local_db(response):
         db.session.commit()
 
 
-def get_status_async(letters):
-    response = []
-    pool = Pool(30)
-    threads = [pool.spawn(fetch_letter_status_la_poste, letter.tracking_number) for letter in letters]
-    pool.join()
-    for thread in threads:
-        status = None
-        resp = {}
-        if thread.value is None:
-            continue
-        elif thread.value['returnCode'] == 200:
-            data = thread.value
-            timeline = data['shipment']['timeline']
-            for stat in timeline:
-                if not stat['status']:
-                    break
-                status = str(stat['id']) + ' ' + stat['shortLabel']
-            if status is not None:
-                resp['status'] = status
-            else:
-                resp['status'] = 'Not yet processed'
-            resp['tracking_number'] = data['shipment']['idShip']
-            response.append(resp)
-        else:
-            response.append({'status': thread.value['returnCode'], 'tracking_number': thread.value['tracking_number']})
-    return response
-
-
 def update_in_local_db_async(response):
     for resp in response:
         if resp['status'] != 400 and resp['status'] != 401 and resp['status'] != 404 and resp['status'] != 500 and resp[
@@ -159,3 +128,29 @@ def update_in_local_db_async(response):
                 update_history(resp['tracking_number'], row.status)
                 row.status = resp['status']
                 db.session.commit()
+
+def get_status_async_pool(letters):
+    response =[]
+    pool = multiprocessing.Pool(processes=8)
+    threads = pool.map(fetch_letter_status_la_poste, [letter.tracking_number for letter in letters])
+    for thread in threads:
+        status = None
+        resp = {}
+        if thread is None:
+            continue
+        elif thread['returnCode'] == 200:
+            data = thread
+            timeline = data['shipment']['timeline']
+            for stat in timeline:
+                if not stat['status']:
+                    break
+                status = str(stat['id']) + ' ' + stat['shortLabel']
+            if status is not None:
+                resp['status'] = status
+            else:
+                resp['status'] = 'Not yet processed'
+            resp['tracking_number'] = data['shipment']['idShip']
+            response.append(resp)
+        else:
+            response.append({'status': thread['returnCode'], 'tracking_number': thread['tracking_number']})
+    return response
