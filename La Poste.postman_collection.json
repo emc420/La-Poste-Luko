@@ -1,0 +1,58 @@
+{
+	"variables": [],
+	"info": {
+		"name": "La Poste",
+		"_postman_id": "52fc4ef4-295d-2af8-b72a-97a14fc8d99d",
+		"description": "",
+		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "http://127.0.0.1:5000/v1/getStatus/GM111111110NZ",
+			"request": {
+				"url": "http://127.0.0.1:5000/v1/getStatus/GM111111110NZ",
+				"method": "GET",
+				"header": [
+					{
+						"key": "",
+						"value": "",
+						"description": ""
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"description": ""
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": ""
+				},
+				"description": ""
+			},
+			"response": []
+		},
+		{
+			"name": "http://127.0.0.1:5000/v1/getStatusAllLetters",
+			"request": {
+				"url": "http://127.0.0.1:5000/v1/getStatusAllLetters",
+				"method": "GET",
+				"header": [],
+				"body": {},
+				"description": ""
+			},
+			"response": []
+		},
+		{
+			"name": "http://127.0.0.1:5000/v1/getStatusAsync",
+			"request": {
+				"url": "http://127.0.0.1:5000/v1/getStatusAsync",
+				"method": "GET",
+				"header": [],
+				"body": {},
+				"description": ""
+			},
+			"response": []
+		}
+	]
+}
